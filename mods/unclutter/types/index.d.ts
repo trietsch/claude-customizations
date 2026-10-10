@@ -17,6 +17,8 @@ declare module 'claude-code' {
       outputs: StateFamily<string>
       goals: StateFamily<string>
       highlighted: StateFamily<boolean>
+      shortcutHolder: StateFamily<boolean>
+      shortcutHolderId: string | null
     }
   }
 }

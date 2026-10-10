@@ -248,3 +248,32 @@ test('j and k walk the collapsed calls and highlight the shown one', async ($, o
   await pane.press({ key: 'previous' })
   expect(JSON.stringify(await pane.drawn())).toContain('SELECT 1')
 })
+
+test('the shown row carries the open-pane shortcut and opens the pane focused', async ($, on) => {
+  const opened: { id: string; focus?: true }[] = []
+  on('ui.open', ($, e) => {
+    opened.push({ id: e.id, focus: e.focus })
+    return { value: { isPlaced: true } }
+  })
+  const rowFor = (id: string) =>
+    $.ui.mount({
+      plugin: 'unclutter',
+      surface: 'terminal',
+      component: 'ToolResult',
+      requestId: id,
+      props: { tool_use_id: id, tool: 'mcp__clickhouse-prd__run_query', output: 'ok', isErrored: false },
+    })
+  const rowA = await rowFor('toolu_a')
+  const rowB = await rowFor('toolu_b')
+
+  await rowA.press({ key: 'details' })
+  expect((await rowA.find({ key: 'details' }))?.props).toMatchObject({ action: 'diff:back' })
+  expect((await rowB.find({ key: 'details' }))?.props.action).toBeUndefined()
+
+  await rowA.press({ key: 'details' })
+  expect(opened).toEqual([{ id: 'tool-detail' }, { id: 'tool-detail', focus: true }])
+
+  await rowB.press({ key: 'details' })
+  expect((await rowA.find({ key: 'details' }))?.props.action).toBeUndefined()
+  expect((await rowB.find({ key: 'details' }))?.props).toMatchObject({ action: 'diff:back' })
+})

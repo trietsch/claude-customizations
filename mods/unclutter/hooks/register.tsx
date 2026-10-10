@@ -6,6 +6,7 @@ import type { ToolDetail } from '../types'
 const PANE = 'tool-detail'
 const PANE_TITLE = 'Tool call'
 const FOLLOW_COMMAND = 'tool-pane-follow'
+const OPEN_PANE_ACTION = 'diff:back'
 const MAX_CHARS = 200_000
 const MAX_GOAL_CHARS = 1_000
 const ENVELOPE_KEYS = ['agentId', 'requestMeta', 'consent']
@@ -18,6 +19,8 @@ const inputs = atom({ plugin: 'unclutter', key: 'inputs' } as const, '')
 const outputs = atom({ plugin: 'unclutter', key: 'outputs' } as const, '')
 const goals = atom({ plugin: 'unclutter', key: 'goals' } as const, '')
 const highlighted = atom({ plugin: 'unclutter', key: 'highlighted' } as const, false)
+const shortcutHolder = atom({ plugin: 'unclutter', key: 'shortcutHolder' } as const, false)
+const shortcutHolderId = atom({ plugin: 'unclutter', key: 'shortcutHolderId' } as const, null)
 
 const clip = (text: string, max = MAX_CHARS): string =>
   text.length > max ? `${text.slice(0, max)}\n... (${text.length - max} more characters)` : text
@@ -217,6 +220,14 @@ const goalFrom = (messages: readonly SessionMessage[], toolUseId: string, input:
 const goalOf = async ($: EngineInterface, toolUseId: string, input: Record<string, unknown>): Promise<string> =>
   goalFrom(await $.session.messages().catch(() => []), toolUseId, input)
 
+const moveShortcutHolder = async ($: EngineInterface, id: string): Promise<void> => {
+  const previous = await read($, shortcutHolderId)
+  if (previous === id) return
+  if (previous !== null) await update($, memberOf(shortcutHolder, { requestId: previous }), () => false)
+  await update($, memberOf(shortcutHolder, { requestId: id }), () => true)
+  await update($, shortcutHolderId, () => id)
+}
+
 const showDetail = async ($: EngineInterface, detail: ToolDetail): Promise<void> => {
   const previous = await read($, selected)
   if (previous !== null && previous.id !== detail.id) {
@@ -224,6 +235,7 @@ const showDetail = async ($: EngineInterface, detail: ToolDetail): Promise<void>
   }
   await update($, memberOf(highlighted, { requestId: detail.id }), () => true)
   await update($, selected, () => detail)
+  await moveShortcutHolder($, detail.id)
 }
 
 const stepSelection = async ($: EngineInterface, direction: 1 | -1, expandedTools: ReadonlySet<string>): Promise<void> => {
@@ -270,11 +282,18 @@ const highlightBackgroundOf = async (
   return theme.includes('light') ? HIGHLIGHT_BACKGROUNDS.light : HIGHLIGHT_BACKGROUNDS.dark
 }
 
+type RowState = { background: string | undefined; isShortcutHolder: boolean }
+
+const rowStateOf = async ($: EngineInterface, e: { requestId: string }, configuredColor: string): Promise<RowState> => ({
+  background: await highlightBackgroundOf($, e, configuredColor),
+  isShortcutHolder: await read($, memberOf(shortcutHolder, e)),
+})
+
 const collapsedResult = (
   $: EngineInterface,
   e: Parameters<EngineInterface['ui']['resolve']>[0] & { requestId: string },
   call: { tool: string; output?: unknown; isErrored: boolean; input?: unknown },
-  background: string | undefined,
+  { background, isShortcutHolder }: RowState,
 ) => {
   const { Box, Button, Text } = $.ui.resolve(e)
   const text = textOf(call.output)
@@ -294,7 +313,7 @@ const collapsedResult = (
       isRunning: false,
     }
     await showDetail($, detail)
-    await $.ui.open({ id: PANE, title: PANE_TITLE })
+    await $.ui.open({ id: PANE, title: PANE_TITLE, ...(isShortcutHolder ? { focus: true as const } : {}) })
   }
 
   return (
@@ -307,7 +326,14 @@ const collapsedResult = (
       ) : (
         <Text dimColor>{summarize(text, call.input)} </Text>
       )}
-      <Button key="details" label="details" plain dimColor={!isHighlighted} onPress={open} />
+      <Button
+        key="details"
+        label="details"
+        plain
+        dimColor={!isHighlighted}
+        onPress={open}
+        {...(isShortcutHolder ? { action: OPEN_PANE_ACTION } : {})}
+      />
     </Box>
   )
 }
@@ -364,6 +390,8 @@ export const register: Register = (on, options) => {
     await update($, selected, current =>
       current?.id === id ? { ...current, output, isError, isRunning: false } : current,
     )
+    const isCollapsedOnMainThread = e.agentId === undefined && !expandedTools.has(e.tool)
+    if (isCollapsedOnMainThread && (await read($, selected)) === null) await moveShortcutHolder($, id)
     return ran
   }).catch(($, e, next) => next(e))
 
@@ -373,23 +401,23 @@ export const register: Register = (on, options) => {
 
     const { Box, Text } = $.ui.resolve(e)
     const color = e.props.isErrored ? 'red' : 'green'
-    const background = await highlightBackgroundOf($, e, highlightColor)
+    const rowState = await rowStateOf($, e, highlightColor)
 
     return (
-      <Box flexDirection="column" backgroundColor={background}>
+      <Box flexDirection="column" backgroundColor={rowState.background}>
         <Text wrap="truncate-end">
           <Text color={color}>⏺ </Text>
           <Text bold>{displayToolName(e.props.tool)}</Text>
           <Text dimColor>({argumentsPreview(e.props.input)})</Text>
         </Text>
-        {collapsedResult($, e, e.props, background)}
+        {collapsedResult($, e, e.props, rowState)}
       </Box>
     )
   })
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     if (expandedTools.has(e.props.tool)) return next(e)
-    return collapsedResult($, e, e.props, await highlightBackgroundOf($, e, highlightColor))
+    return collapsedResult($, e, e.props, await rowStateOf($, e, highlightColor))
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
