@@ -1,0 +1,26 @@
+{
+  "name": "unclutter",
+  "version": "0.5.0",
+  "description": "Collapses tool results (MCP included) to one line; a click opens the full call in a side pane",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "expandedTools": {
+      "type": "string",
+      "title": "Tools shown in full",
+      "description": "Comma-separated tool names whose results are never collapsed",
+      "default": "AskUserQuestion,ExitPlanMode"
+    },
+    "followLatest": {
+      "type": "boolean",
+      "title": "Pane follows the latest tool call",
+      "description": "When on, an open tool call pane switches to each new tool call; when off, it keeps showing the call it was opened on. Toggle in-session with f in the pane or /tool-pane-follow",
+      "default": true
+    },
+    "highlightColor": {
+      "type": "string",
+      "title": "Highlight background",
+      "description": "Background of the call shown in the pane: auto picks one for your dark or light theme, or give a color name or hex such as #3b4252",
+      "default": "auto"
+    }
+  }
+}

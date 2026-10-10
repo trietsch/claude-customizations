@@ -1,0 +1,12 @@
+{
+  "name": "claude-customizations",
+  "description": "Personal Claude Code mods",
+  "owner": { "name": "Robin Trietsch" },
+  "plugins": [
+    {
+      "name": "unclutter",
+      "source": "./mods/unclutter",
+      "description": "Collapses tool results (MCP included) to one line; details open in a side pane"
+    }
+  ]
+}
